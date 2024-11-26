@@ -2,18 +2,20 @@ import os
 import pickle
 import cv2
 import qrcode
+import PIL
 from PIL import Image
 import json
 import time
+import pygame
 import requests
+import tkinter as tk
 import google_auth_oauthlib.flow
 from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
 
 # If modifying the scope, delete the file token.pickle.
 SCOPES = ['https://www.googleapis.com/auth/photospicker.mediaitems.readonly']
+
 
 
 
@@ -27,7 +29,11 @@ def generate_qr_code(data):
     )
     qr.add_data(data)
     qr.make(fit=True)
-    return qr.make_image(fill='black', back_color='white')
+  
+    qrr = qr.make_image(fill_color="black", back_color="white")
+    type(qrr)
+    qrr.save("selectionQR.png")
+    return None
 
 
 def authenticate_google_photos():
@@ -138,57 +144,98 @@ def wait_for_selection(creds, id):
     return None
 
 
-def load_images(folder):
-    return [cv2.imread(os.path.join('images', img))
-            for img in os.listdir(folder) if img.endswith(('PNG', 'JPG', 'JPEG', 'HEIC'))]
+def resize_image(image, screen_width, screen_height):
+    img_width, img_height = image.get_size()
+    
+    screen_aspect_ratio = screen_width/screen_height
+    img_aspect_ratio = img_width/img_height
+    
+    new_height = screen_height
+    new_width = screen_width
+        
+    return pygame.transform.scale(image, (new_width, new_height))
+    
 
-def display_images(images):
+
+def crossfade(current_image, next_image, screen):
+    alpha = 0
+    while alpha < 255:
+        current_image.set_alpha(255-alpha)
+        next_image.set_alpha(alpha)
+        
+        screen.fill((0,0,0))
+        screen.blit(current_image, (0,0))
+        screen.blit(next_image, (0,0))
+        
+        pygame.display.flip()
+        
+        alpha+=1
+        pygame.time.delay(60)
+
+
+def display_images(images, screen, screen_width, screen_height):
+    clock = pygame.time.Clock()
     index = 0
-    alpha = 1.0
-    beta = 0.0
-
-    # Create a window to display the slideshow
-    cv2.namedWindow("Slideshow", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("Slideshow", 800, 600)
-
+    
+    current_image_path = os.path.join('images', images[index])
+    current_image = pygame.image.load(current_image_path)
+    current_image = resize_image(current_image, screen_width, screen_height)
+    
     while True:
-        img1 = cv2.resize(images[index % len(images)], (800, 600))
-        img2 = cv2.resize(images[(index + 1) % len(images)], (800, 600))
+        next_index = (index + 1) % len(images)
+        next_image_path = os.path.join('images', images[next_index])
+        next_image = pygame.image.load(next_image_path)
+        next_image = resize_image(next_image, screen_width, screen_height)
+        crossfade(current_image, next_image, screen)
+        
+        current_image = next_image
+        index = next_index
+        
+        #Controls how long image is on screen
+        pygame.time.delay(2000)
+        
+        clock.tick(60)
+        
 
-        alpha -= 0.01
-        beta += 0.01
-
-        # Blend the two images
-        blended = cv2.addWeighted(img1, alpha, img2, beta, 0)
-        cv2.imshow("Slideshow", blended)
-
-        # Reset alpha and beta for the next transition
-        if alpha <= 0:
-            alpha, beta = 1.0, 0.0
-            index += 1  # Move to the next image
-            cv2.waitKey(5000)
-
-        # Press 'q' to exit the slideshow
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    cv2.destroyAllWindows()
-
-if __name__ == '__main__':
-    creds = authenticate_google_photos()
+def screen_init():
+    pygame.init()
+    displayInfo = pygame.display.Info()
+    displayWidth = displayInfo.current_w
+    displayHeight = displayInfo.current_h
+    screen = pygame.display.set_mode((displayWidth, displayHeight),pygame.FULLSCREEN)
+    return screen, displayWidth, displayHeight
+    
+    
+def new_selection(credentials):
     session = create_session(creds)
     id_value = session.get('id')
     picker_uri = session.get('pickerUri')
-    qr = generate_qr_code(picker_uri)
+    
+    generate_qr_code(picker_uri)
+    
     newUrl = "https://photospicker.googleapis.com/v1/sessions/"+id_value+"/mediaItems"
-    qr.show()
+    
+    screen, screenWidth, screenHeight = screen_init()
+    codeDisplay = pygame.image.load("selectionQR.png")
+    screen.blit(codeDisplay, (200, 200))
+    pygame.display.flip()
     wait_for_selection(creds, id_value)
-    qr.close()
+    pygame.display.quit()
+    
     items = get_selected_items(creds, id_value)
     media_items = items.get('mediaItems', [])
     for item in media_items:
         base_url = item.get('mediaFile', {}).get('baseUrl')+"=d"
         download_images(item, base_url, creds.token)
-    images = load_images('images')
-    print(images)
-    display_images(images)
+    images = [f for f in os.listdir('images') if f.endswith(('.png', '.PNG', '.jpg', '.JPG', '.jpeg', '.JPEG', '.heic', '.HEIC'))]
+    screen, screenWidth, screenHeight = screen_init()
+    display_images(images, screen, screenWidth, screenHeight)
+    pygame.display.quit()
+    
+    return None
+
+
+if __name__ == '__main__':
+    creds = authenticate_google_photos()
+    new_selection(creds)
+    
