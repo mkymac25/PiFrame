@@ -4,6 +4,7 @@ import cv2
 import qrcode
 import PIL
 from PIL import Image
+import RPi.GPIO as GPIO
 import json
 import time
 import pygame
@@ -16,7 +17,16 @@ from google.auth.transport.requests import Request
 # If modifying the scope, delete the file token.pickle.
 SCOPES = ['https://www.googleapis.com/auth/photospicker.mediaitems.readonly']
 
+KEY_PIN = 17
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(KEY_PIN, GPIO.IN, pull_up_down=GPIO.PULLUP)
 
+def key_pressed_callback(channel):
+    global stop_loop
+    stop_loop = True  # Set flag when button is pressed
+
+# Attach interrupt
+GPIO.add_event_detect(KEY_PIN, GPIO.FALLING, callback=key_pressed_callback, bouncetime=50)
 
 
 def generate_qr_code(data):
@@ -227,15 +237,25 @@ def new_selection(credentials):
     for item in media_items:
         base_url = item.get('mediaFile', {}).get('baseUrl')+"=d"
         download_images(item, base_url, creds.token)
-    images = [f for f in os.listdir('images') if f.endswith(('.png', '.PNG', '.jpg', '.JPG', '.jpeg', '.JPEG', '.heic', '.HEIC'))]
+        
+    return None
+
+
+
+def photoView(credentials):
     screen, screenWidth, screenHeight = screen_init()
+    images = [f for f in os.listdir('images') if f.endswith(('.png', '.PNG', '.jpg', '.JPG', '.jpeg', '.JPEG', '.heic', '.HEIC'))]
+    listLength = len(images)
+    if listLength == 0:
+        new_selection(credentials)
+        images = [f for f in os.listdir('images') if f.endswith(('.png', '.PNG', '.jpg', '.JPG', '.jpeg', '.JPEG', '.heic', '.HEIC'))]
     display_images(images, screen, screenWidth, screenHeight)
     pygame.display.quit()
     
-    return None
 
 
 if __name__ == '__main__':
     creds = authenticate_google_photos()
-    new_selection(creds)
+    photoView(creds)
+    #new_selection(creds)
     
