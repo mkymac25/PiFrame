@@ -191,7 +191,7 @@ def display_images(images, screen, screen_width, screen_height):
     current_image = pygame.image.load(current_image_path)
     current_image = resize_image(current_image, screen_width, screen_height)
     
-    while True:
+    while stop_loop:
         next_index = (index + 1) % len(images)
         next_image_path = os.path.join('images', images[next_index])
         next_image = pygame.image.load(next_image_path)
